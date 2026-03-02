@@ -223,16 +223,36 @@ def buy_key():
             elif key_type == "vv":
                 days = None
 
+            # --- LOGIC CỘNG DỒN THỜI GIAN (MỚI) ---
+            current_active = db["active"].get(username)
+            now = time.time()
+            new_expires_at = None
+
+            if days is None:
+                # Mua vĩnh viễn -> Set luôn là None
+                new_expires_at = None
+            else:
+                # Nếu đang có key vĩnh viễn -> Giữ nguyên
+                if current_active and current_active.get("expiresAt") is None:
+                    new_expires_at = None
+                # Nếu đang có key còn hạn -> Cộng thêm vào hạn cũ
+                elif current_active and current_active.get("expiresAt") and current_active["expiresAt"] > now:
+                    new_expires_at = current_active["expiresAt"] + (days * 86400)
+                # Nếu hết hạn hoặc chưa có -> Tính từ bây giờ
+                else:
+                    new_expires_at = now + (days * 86400)
+            # ---------------------------------------
+
             new_key = create_key("LK", days, price)
             new_key["usedBy"] = username
             new_key["status"] = "used"
             db["shop_keys"].append(new_key)
 
-            # Tự động kích hoạt key cho user
+            # Tự động kích hoạt key cho user với thời gian đã cộng dồn
             db["active"][username] = {
                 "code": new_key["code"],
                 "type": new_key["type"],
-                "expiresAt": new_key["expiresAt"],
+                "expiresAt": new_expires_at,
                 "activatedAt": time.time()
             }
 
@@ -494,6 +514,28 @@ def enter_key(gcode):
 
 @bp.route("/api/predict/<game>")
 def api_predict(game):
+    # --- BẢO MẬT API: KIỂM TRA KEY HẾT HẠN ---
+    if "username" not in session:
+        return jsonify({"ok": False, "error": "Vui lòng đăng nhập"})
+    
+    username = session["username"]
+    db = load_db()
+    
+    # Kiểm tra user bị khóa
+    if username in db.get("blocked_web_login", []):
+        session.clear()
+        return jsonify({"ok": False, "error": "Tài khoản bị khóa"})
+
+    # Kiểm tra có key kích hoạt không
+    active_key = db["active"].get(username)
+    if not active_key:
+        return jsonify({"ok": False, "error": "Chưa kích hoạt key"})
+        
+    # Kiểm tra hạn sử dụng
+    if active_key["expiresAt"] is not None and active_key["expiresAt"] < time.time():
+        return jsonify({"ok": False, "error": "Key đã hết hạn"})
+    # -----------------------------------------
+
     game = game.lower()
     if game not in HIST:
         return jsonify({"ok": False, "error": "invalid game"})
