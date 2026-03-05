@@ -38,41 +38,8 @@ def get_history_depth(vip_level):
     return VIP_LEVELS.get(vip_level, VIP_LEVELS["Đồng"])["history_depth"]
 
 # ================== DATABASE ==================
-DB_LOCK = threading.Lock()
-
-def load_db():
-    default_db = {
-        "shop_keys": [], "users": {}, "active": {},
-        "blocked_web_login": [], "transactions": [],
-        "blocked_telegram_ids": [], "cau_history": {}
-    }
-    with DB_LOCK:
-        if not os.path.exists(DATA_FILE):
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(default_db, f, indent=2, ensure_ascii=False)
-            return default_db
-        try:
-            with open(DATA_FILE, encoding="utf-8") as f:
-                data = json.load(f)
-                if not isinstance(data, dict):
-                    raise ValueError("Dữ liệu hỏng")
-                for k, v in default_db.items():
-                    if k not in data:
-                        data[k] = v
-                return data
-        except Exception as e:
-            print(f"⚠️ Lỗi đọc data.json: {e}. Đang tạo lại file mới...")
-            try:
-                os.rename(DATA_FILE, f"{DATA_FILE}.bak.{int(time.time())}")
-            except: pass
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(default_db, f, indent=2, ensure_ascii=False)
-            return default_db
-
-def save_db(db):
-    with DB_LOCK:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(db, f, indent=2, ensure_ascii=False)
+# Dùng database.py để lưu lên Supabase (tránh mất data khi Render restart)
+from database import load_db, save_db, DB_LOCK
 
 def hash_password(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
