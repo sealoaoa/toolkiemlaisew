@@ -831,6 +831,11 @@ async def cmd_tong(update: Update, context: ContextTypes.DEFAULT_TYPE):
     blocked_web_users = len(db.get("blocked_web_login", []))
     blocked_tg_users = len(db.get("blocked_telegram_ids", []))
 
+    # Thống kê doanh thu
+    transactions = db.get("transactions", [])
+    total_deposit = sum(t.get("amount", 0) for t in transactions if t.get("type") == "deposit" and t.get("status") == "completed")
+    total_buy_key = sum(t.get("amount", 0) for t in transactions if t.get("type") == "buy_key" and t.get("status") == "completed")
+
     # Danh sách user và số dư
     user_list = ""
     for idx, (username,
@@ -889,7 +894,50 @@ async def cmd_tong(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ♾️ VV = Key vĩnh viễn
 🔑 = Ngày hết hạn key"""
 
-    await update.message.reply_text(msg, parse_mode='Markdown')
+    # Tách tin nhắn nếu quá 4096 ký tự (giới hạn Telegram)
+    header = f"""📊 THỐNG KÊ HỆ THỐNG
+
+💰 DOANH THU:
+━━━━━━━━━━━━━━━━━━
+• Tổng nạp vào: {total_deposit:,}đ
+• Tổng mua key: {total_buy_key:,}đ
+• Số dư còn lại (users): {total_balance:,}đ
+
+👥 NGƯỜI DÙNG:
+━━━━━━━━━━━━━━━━━━
+• Tổng số: {total_users} user
+• Đang có key: {active_users_with_keys} user
+• Bị khóa web: {blocked_web_users} user
+• Bị chặn bot: {blocked_tg_users} user
+
+🔑 KEYS:
+━━━━━━━━━━━━━━━━━━
+• Tổng số: {total_keys} key
+• Còn trống: {active_keys_count} key
+• Đã dùng: {used_keys_count} key
+• Bị khóa: {blocked_keys_count} key
+
+📋 CHI TIẾT USERS:
+━━━━━━━━━━━━━━━━━━"""
+
+    await update.message.reply_text(header)
+
+    # Gửi danh sách user theo từng chunk 4000 ký tự
+    if not user_list:
+        await update.message.reply_text("Chưa có user nào")
+    else:
+        chunk = ""
+        for line in user_list.splitlines(keepends=True):
+            if len(chunk) + len(line) > 4000:
+                await update.message.reply_text(chunk)
+                chunk = ""
+            chunk += line
+        if chunk:
+            await update.message.reply_text(chunk)
+
+    await update.message.reply_text(
+        "💡 Chú thích:\n🟢 = Có key hoạt động\n⚪ = Chưa có key\n🔴 = Bị khóa web\n♾️ VV = Key vĩnh viễn\n🔑 = Ngày hết hạn key"
+    )
 
 
 async def cmd_xoa(update: Update, context: ContextTypes.DEFAULT_TYPE):

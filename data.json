@@ -1,37 +1,6 @@
 {
-  "shop_keys": [
-    {
-      "code": "LK-HC5JVGKR",
-      "type": "LK",
-      "price": 0,
-      "createdAt": 1772180106.6406953,
-      "expiresAt": 1772266506.6406953,
-      "status": "used",
-      "usedBy": "sang"
-    }
-  ],
-  "users": {
-    "sang": {
-      "user_id": "NVAS67NN-T",
-      "password": "bcb15f821479b4d5772bd0ca866c00ad5f926e3580720659cc80d39c9d09802a",
-      "balance": 0,
-      "created_at": 1772177224.2672656,
-      "vip_level": "Đồng",
-      "vip_exp": 0,
-      "total_predictions": 0,
-      "correct_predictions": 0
-    },
-    "admin": {
-      "user_id": "0AJ5VT33LF",
-      "password": "bcb15f821479b4d5772bd0ca866c00ad5f926e3580720659cc80d39c9d09802a",
-      "balance": 0,
-      "created_at": 1772325159.4796603,
-      "vip_level": "Đồng",
-      "vip_exp": 0,
-      "total_predictions": 0,
-      "correct_predictions": 0
-    }
-  },
+  "shop_keys": [],
+  "users": {},
   "active": {},
   "blocked_web_login": [],
   "transactions": [],
