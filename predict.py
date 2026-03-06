@@ -457,8 +457,9 @@ def analyze(h, game_type="sum", api_prediction=None, api_pattern=None):
         conf = 0.75  # Mặc định tin cậy API cao
 
         if api_pattern:
-            t_count = api_pattern.count('t')
-            x_count = api_pattern.count('x')
+            lower_pattern = api_pattern.lower()
+            t_count = lower_pattern.count('t')
+            x_count = lower_pattern.count('x')
             total = len(api_pattern)
             if total > 0:
                 ratio = max(t_count, x_count) / total
@@ -1248,8 +1249,23 @@ def predict(game):
 
     if game == "lc79":
         raw = safe_json(API_LC79)
-        if not raw: return None
-        
+        if not raw:
+            # Fallback: Dự đoán từ lịch sử nội bộ nếu API lỗi
+            du, conf = analyze(list(HIST["lc79"]), "lc79")
+            return {
+                "game": "LC79",
+                "phien": "---",
+                "ket_qua": "Mất kết nối",
+                "xuc_xac": [0, 0, 0],
+                "tong_xuc_xac": 0,
+                "du_doan": du,
+                "do_tin_cay": conf,
+                "loai_cau": "Đang tải...",
+                "pattern": "",
+                "accuracy": f"{STATS['lc79']['correct']}/{STATS['lc79']['total']}" if STATS['lc79']['total'] > 0 else "0/0",
+                "history": get_formatted_history("lc79")
+            }
+
         # Xử lý JSON format mới
         phien = str(raw.get("phien") or raw.get("phien_hien_tai") or raw.get("Phien"))
         
@@ -1271,10 +1287,7 @@ def predict(game):
                 analyze_and_save_cau_patterns(list(h), "lc79")
 
         # Dự đoán phiên tiếp theo
-        try:
-            phien_tiep_theo = str(int(phien) + 1)
-        except:
-            phien_tiep_theo = "---"
+        phien_tiep_theo = phien
             
         api_du = normalize(raw.get("du_doan"))
         
