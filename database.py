@@ -59,11 +59,13 @@ def _has_supabase() -> bool:
 
 # ── Headers cho Supabase REST API ────────────────────────────────────────────
 def _headers() -> dict:
+    # Ho tro ca key moi (sb_secret_) lan key cu (eyJ...)
     return {
         "apikey":        SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type":  "application/json",
         "Prefer":        "return=minimal",
+        "X-Client-Info": "supabase-py/2.0",
     }
 
 # ── Giá trị mặc định khi DB trống ────────────────────────────────────────────
