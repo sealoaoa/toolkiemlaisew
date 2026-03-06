@@ -1009,6 +1009,7 @@ def predict(game):
                 "pattern": pattern,
                 "tong_lich_su": len(pattern_history),
                 "id": "@minhsangdangcap",
+                "link_iframe": LINK_SUN,
                 "history": get_formatted_history("sun")
             }
 
@@ -1077,6 +1078,7 @@ def predict(game):
             "pattern": pattern,
             "tong_lich_su": len(pattern_history),
             "id": "@minhsangdangcap",
+            "link_iframe": LINK_SUN,
             "history": get_formatted_history("sun")
         }
 
@@ -1248,9 +1250,18 @@ def predict(game):
         raw = safe_json(API_LC79)
         if not raw: return None
         
-        # New JSON format support
-        phien = raw.get("Phien") or raw.get("phien")
-        ket = normalize(raw.get("Ket_qua") or raw.get("ket_qua"))
+        # Xử lý JSON format mới
+        phien = str(raw.get("phien") or raw.get("phien_hien_tai") or raw.get("Phien"))
+        
+        # Xử lý kết quả từ xúc xắc (ưu tiên) hoặc trường ket_qua
+        xuc_xac = raw.get("xuc_xac", [0, 0, 0])
+        tong_xuc_xac = sum(xuc_xac) if xuc_xac and len(xuc_xac) == 3 else 0
+        
+        ket = None
+        if tong_xuc_xac > 0:
+            ket = "Tài" if tong_xuc_xac > 10 else "Xỉu"
+        else:
+            ket = normalize(raw.get("ket_qua") or raw.get("Ket_qua"))
 
         if ket and ket in ["Tài", "Xỉu"]:
             update_prediction_results("lc79", phien, ket)
@@ -1259,17 +1270,29 @@ def predict(game):
                 save_history()
                 analyze_and_save_cau_patterns(list(h), "lc79")
 
-        phien_tiep_theo = str(raw.get("phiendudoan")) if raw.get("phiendudoan") else (str(int(phien) + 1) if phien else phien)
+        # Dự đoán phiên tiếp theo
+        try:
+            phien_tiep_theo = str(int(phien) + 1)
+        except:
+            phien_tiep_theo = "---"
+            
         api_du = normalize(raw.get("du_doan"))
         
-        # Parse confidence "84,00%"
-        raw_conf = raw.get("ty_le_dd")
+        # Parse confidence "92%"
+        raw_conf = raw.get("do_tin_cay") or raw.get("ty_le_dd")
         try:
-            api_conf = float(str(raw_conf).replace('%', '').replace(',', '.')) / 100 if raw_conf else None
+            if raw_conf:
+                api_conf = float(str(raw_conf).replace('%', '').replace(',', '.')) / 100
+            else:
+                api_conf = None
         except:
             api_conf = None
             
-        du, conf = analyze(list(h), "lc79", api_prediction=api_du)
+        # Lấy thêm thông tin hiển thị
+        loai_cau = raw.get("loai_cau", "")
+        pattern = raw.get("pattern", "")
+            
+        du, conf = analyze(list(h), "lc79", api_prediction=api_du, api_pattern=pattern)
         if api_conf is not None:
             conf = api_conf
             
@@ -1279,8 +1302,12 @@ def predict(game):
             "game": "LC79",
             "phien": phien,
             "ket_qua": ket or "Đang chờ...",
+            "xuc_xac": xuc_xac,
+            "tong_xuc_xac": tong_xuc_xac,
             "du_doan": du,
             "do_tin_cay": conf,
+            "loai_cau": loai_cau,
+            "pattern": pattern,
             "accuracy": f"{STATS['lc79']['correct']}/{STATS['lc79']['total']}" if STATS['lc79']['total'] > 0 else "0/0",
             "history": get_formatted_history("lc79")
         }
@@ -1545,5 +1572,6 @@ def predict(game):
             "so_lan_sai": STATS['sicbo']['total'] - STATS['sicbo']['correct'] if STATS['sicbo']['total'] > 0 else 0,
             "do_tin_cay": conf_percent,
             "id": "@minhsangdangcap",
+            "link_iframe": LINK_SICBO,
             "history": get_formatted_history("sicbo")
         }
