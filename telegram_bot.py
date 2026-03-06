@@ -866,35 +866,6 @@ async def cmd_tong(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_list += f"{idx}. {has_active}{is_blocked} {username}{key_info}\n"
         user_list += f"   💰 {balance:,}đ | 🆔 {user_id} | 📅 {created}\n"
 
-    msg = f"""📊 THỐNG KÊ HỆ THỐNG
-
-👥 NGƯỜI DÙNG:
-━━━━━━━━━━━━━━━━━━
-• Tổng số: {total_users} user
-• Tổng số dư: {total_balance:,}đ
-• Đang có key: {active_users_with_keys} user
-• Bị khóa web: {blocked_web_users} user
-• Bị chặn bot: {blocked_tg_users} user
-
-🔑 KEYS:
-━━━━━━━━━━━━━━━━━━
-• Tổng số: {total_keys} key
-• Còn trống: {active_keys_count} key
-• Đã dùng: {used_keys_count} key
-• Bị khóa: {blocked_keys_count} key
-
-📋 CHI TIẾT USERS:
-━━━━━━━━━━━━━━━━━━
-{user_list if user_list else "Chưa có user nào"}
-
-💡 Chú thích:
-🟢 = Có key hoạt động
-⚪ = Chưa có key
-🔴 = Bị khóa web
-♾️ VV = Key vĩnh viễn
-🔑 = Ngày hết hạn key"""
-
-    # Tách tin nhắn nếu quá 4096 ký tự (giới hạn Telegram)
     header = f"""📊 THỐNG KÊ HỆ THỐNG
 
 💰 DOANH THU:
@@ -1240,7 +1211,7 @@ async def cmd_lichsu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     recent_30_total = recent_30_correct + recent_30_wrong
     recent_30_accuracy = round(recent_30_correct / recent_30_total * 100, 2) if recent_30_total > 0 else 0
 
-    # Hiển thị 10 phiên gần nhất chi tiết (phiên +1 để phù hợp với logic dự đoán)
+    # Hiển thị 10 phiên gần nhất chi tiết
     recent_10 = history[-10:] if len(history) >= 10 else history
     recent_detail = ""
 
@@ -1251,15 +1222,11 @@ async def cmd_lichsu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for idx, p in enumerate(reversed(recent_10), 1):
         session_raw = p.get("session", "N/A")
-
-        # Phiên hiển thị = phiên trong history (đã +1 khi lưu)
         session_display = session_raw
-
         prediction = p.get("prediction", "N/A")
         actual = p.get("actual")
         is_correct = p.get("correct")
 
-        # Hiển thị kết quả rõ ràng
         if actual and actual in ["Tài", "Xỉu"]:
             actual_text = actual
         else:
@@ -1305,8 +1272,7 @@ async def cmd_lichsu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • ⏳ Chờ KQ: {pending_count}
 
 ━━━━━━━━━━━━━━━━━━
-{recent_detail}
-━━━━━━━━━━━━━━━━━━
+{recent_detail}━━━━━━━━━━━━━━━━━━
 💡 Tỷ lệ thắng 10 phiên: {round(win_count/(win_count+lose_count)*100, 1) if (win_count+lose_count) > 0 else 0}%"""
 
     await update.message.reply_text(msg)
@@ -1323,7 +1289,15 @@ async def start_bot_async():
     print(f"👑 Admin ID: {ADMIN_ID}")
 
     try:
-        config.bot_app = Application.builder().token(BOT_TOKEN).build()
+        # ✅ FIX: Dùng ApplicationBuilder với job_queue tắt để tránh lỗi APScheduler
+        builder = Application.builder().token(BOT_TOKEN)
+        try:
+            # Thử bật job_queue nếu có APScheduler
+            config.bot_app = builder.build()
+            job_queue_available = config.bot_app.job_queue is not None
+        except Exception:
+            job_queue_available = False
+
         bot_app = config.bot_app
 
         # Thêm command handlers TRƯỚC message handler để đảm bảo ưu tiên xử lý
@@ -1346,13 +1320,17 @@ async def start_bot_async():
         bot_app.add_handler(CommandHandler("lichsu", cmd_lichsu))
         bot_app.add_handler(CommandHandler("xuatdata", cmd_xuatdata))
 
-        # Auto backup mỗi ngày lúc 0h00
-        import datetime
-        bot_app.job_queue.run_daily(
-            auto_backup,
-            time=datetime.time(hour=0, minute=0, second=0),
-            name="daily_backup"
-        )
+        # ✅ FIX: Chỉ dùng job_queue nếu APScheduler được cài đặt
+        if job_queue_available:
+            import datetime
+            bot_app.job_queue.run_daily(
+                auto_backup,
+                time=datetime.time(hour=0, minute=0, second=0),
+                name="daily_backup"
+            )
+            print("✅ Auto backup hàng ngày đã được lên lịch")
+        else:
+            print("⚠️ job_queue không khả dụng - bỏ qua auto backup (cài 'pip install python-telegram-bot[job-queue]' để bật)")
 
         # Thêm callback handler cho button xác nhận chuyển khoản và duyệt đơn
         bot_app.add_handler(CallbackQueryHandler(callback_confirm_transfer, pattern="^confirm_transfer_"))
