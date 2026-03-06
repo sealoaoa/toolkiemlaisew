@@ -940,6 +940,144 @@ async def cmd_tong(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_xuatdata(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xuất toàn bộ thông tin tài khoản + số dư ra file JSON và gửi cho admin"""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Bạn không có quyền sử dụng lệnh này")
+        return
+
+    db = load_db()
+    users = db.get("users", {})
+    transactions = db.get("transactions", [])
+
+    # Tạo dữ liệu xuất gọn gàng
+    export_data = {
+        "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "tong_tai_khoan": len(users),
+        "tong_so_du": sum(u.get("balance", 0) for u in users.values()),
+        "tong_nap_vao": sum(t.get("amount", 0) for t in transactions if t.get("type") == "deposit" and t.get("status") == "completed"),
+        "tong_mua_key": sum(t.get("amount", 0) for t in transactions if t.get("type") == "buy_key" and t.get("status") == "completed"),
+        "tai_khoan": []
+    }
+
+    for username, u in users.items():
+        # Lấy lịch sử giao dịch của user
+        user_txns = [
+            {
+                "loai": t.get("type"),
+                "so_tien": t.get("amount", 0),
+                "thoi_gian": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t.get("time", 0))),
+                "trang_thai": t.get("status"),
+            }
+            for t in transactions if t.get("username") == username
+        ]
+
+        # Lấy thông tin key đang active
+        active_key = db.get("active", {}).get(username)
+        key_info = None
+        if active_key:
+            expires = active_key.get("expiresAt")
+            key_info = {
+                "ma_key": active_key.get("code"),
+                "het_han": "Vĩnh viễn" if expires is None else time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(expires))
+            }
+
+        export_data["tai_khoan"].append({
+            "username": username,
+            "user_id": u.get("user_id", ""),
+            "so_du": u.get("balance", 0),
+            "vip": u.get("vip_level", "Đồng"),
+            "ngay_tao": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(u.get("created_at", 0))),
+            "bi_khoa": username in db.get("blocked_web_login", []),
+            "key_active": key_info,
+            "lich_su_giao_dich": user_txns
+        })
+
+    # Sắp xếp theo số dư giảm dần
+    export_data["tai_khoan"].sort(key=lambda x: x["so_du"], reverse=True)
+
+    # Ghi ra file tạm
+    import os, io
+    filename = f"backup_{time.strftime('%Y%m%d_%H%M%S')}.json"
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+    # Gửi file cho admin
+    await update.message.reply_text(
+        f"📦 Đang xuất dữ liệu...\n"
+        f"👥 {len(users)} tài khoản\n"
+        f"💰 Tổng số dư: {export_data['tong_so_du']:,}đ"
+    )
+    with open(filepath, "rb") as f:
+        await update.message.reply_document(
+            document=f,
+            filename=filename,
+            caption=f"✅ Backup {time.strftime('%d/%m/%Y %H:%M:%S')}"
+        )
+
+    # Xóa file tạm sau khi gửi
+    try:
+        os.remove(filepath)
+    except:
+        pass
+
+
+async def auto_backup(context):
+    """Tự động backup mỗi ngày lúc 0h, gửi file cho admin"""
+    import os
+    db = load_db()
+    users = db.get("users", {})
+    transactions = db.get("transactions", [])
+
+    export_data = {
+        "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "loai": "auto_backup_hang_ngay",
+        "tong_tai_khoan": len(users),
+        "tong_so_du": sum(u.get("balance", 0) for u in users.values()),
+        "tong_nap_vao": sum(t.get("amount", 0) for t in transactions if t.get("type") == "deposit" and t.get("status") == "completed"),
+        "tong_mua_key": sum(t.get("amount", 0) for t in transactions if t.get("type") == "buy_key" and t.get("status") == "completed"),
+        "tai_khoan": [
+            {
+                "username": uname,
+                "so_du": u.get("balance", 0),
+                "vip": u.get("vip_level", "Đồng"),
+                "ngay_tao": time.strftime("%Y-%m-%d", time.localtime(u.get("created_at", 0))),
+                "bi_khoa": uname in db.get("blocked_web_login", []),
+            }
+            for uname, u in users.items()
+        ]
+    }
+    export_data["tai_khoan"].sort(key=lambda x: x["so_du"], reverse=True)
+
+    filename = f"auto_backup_{time.strftime('%Y%m%d')}.json"
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+    try:
+        with open(filepath, "rb") as f:
+            await context.bot.send_document(
+                chat_id=ADMIN_ID,
+                document=f,
+                filename=filename,
+                caption=(
+                    f"🔄 AUTO BACKUP {time.strftime('%d/%m/%Y')}\n\n"
+                    f"👥 {len(users)} tài khoản\n"
+                    f"💰 Tổng số dư: {export_data['tong_so_du']:,}đ\n"
+                    f"📥 Tổng nạp: {export_data['tong_nap_vao']:,}đ\n"
+                    f"🔑 Tổng mua key: {export_data['tong_mua_key']:,}đ"
+                )
+            )
+    except Exception as e:
+        print(f"[BACKUP] Lỗi gửi backup: {e}")
+    finally:
+        try:
+            os.remove(filepath)
+        except:
+            pass
+
+
 async def cmd_xoa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Bạn không có quyền sử dụng lệnh này")
@@ -1206,6 +1344,15 @@ async def start_bot_async():
         bot_app.add_handler(CommandHandler("tong", cmd_tong))
         bot_app.add_handler(CommandHandler("xoa", cmd_xoa))
         bot_app.add_handler(CommandHandler("lichsu", cmd_lichsu))
+        bot_app.add_handler(CommandHandler("xuatdata", cmd_xuatdata))
+
+        # Auto backup mỗi ngày lúc 0h00
+        import datetime
+        bot_app.job_queue.run_daily(
+            auto_backup,
+            time=datetime.time(hour=0, minute=0, second=0),
+            name="daily_backup"
+        )
 
         # Thêm callback handler cho button xác nhận chuyển khoản và duyệt đơn
         bot_app.add_handler(CallbackQueryHandler(callback_confirm_transfer, pattern="^confirm_transfer_"))
@@ -1253,15 +1400,26 @@ async def start_bot_async():
 
 
 def run_bot_in_thread():
-    """Chạy bot trong thread riêng với event loop riêng"""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(start_bot_async())
-    except Exception as e:
-        print(f"[ERROR] Bot error: {e}")
-    finally:
+    """Chạy bot trong thread riêng, tự động restart khi gặp lỗi Conflict"""
+    import time as _time
+    while True:
+        loop = None
         try:
-            loop.close()
-        except:
-            pass
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(start_bot_async())
+        except Exception as e:
+            err = str(e)
+            print(f"[BOT] Lỗi: {err}")
+            if "Conflict" in err or "terminated by other getUpdates" in err:
+                print("[BOT] ⚠️ Xung đột bot. Chờ 15 giây rồi restart...")
+                _time.sleep(15)
+            else:
+                print("[BOT] Chờ 10 giây rồi restart...")
+                _time.sleep(10)
+        finally:
+            try:
+                if loop:
+                    loop.close()
+            except:
+                pass
