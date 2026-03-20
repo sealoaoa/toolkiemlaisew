@@ -223,4 +223,86 @@ setInterval(function(){
   _startTime=Date.now();
 },15000);
 
+
+// ══════════════════════════════════════════════════════════════
+// 10. GIẢI MÃ RESPONSE API (XOR + base64)
+// ══════════════════════════════════════════════════════════════
+(function(){
+  // Tạo key giống server: SHA256(SECRET:username:slot)
+  // Dùng Web Crypto API - không thể đọc key từ DevTools
+  var _SECRET = 'minhsang_shop_secret_2024_xK9p';
+
+  async function _makeKey(username){
+    var slot  = Math.floor(Date.now()/1000/300).toString();
+    var raw   = _SECRET+':'+username+':'+slot;
+    var enc   = new TextEncoder().encode(raw);
+    var hash  = await crypto.subtle.digest('SHA-256', enc);
+    return new Uint8Array(hash);
+  }
+
+  function _b64Dec(str){
+    var bin = atob(str), out = new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i);
+    return out;
+  }
+
+  function _xorDec(data, key){
+    var out = new Uint8Array(data.length);
+    for(var i=0;i<data.length;i++) out[i]=data[i]^key[i%key.length];
+    return new TextDecoder().decode(out);
+  }
+
+  // Giải mã response {"e":"..."} từ server
+  async function decryptApiResponse(encObj, username){
+    try{
+      if(!encObj||!encObj.e) return encObj; // không được mã hóa
+      // Lớp ngoài
+      var outer  = JSON.parse(atob(encObj.e));
+      if(!outer.d) return encObj;
+      // Kiểm tra freshness (< 30 giây)
+      if(Date.now()/1000 - outer.t > 30){
+        console.warn('Response expired');
+        return {ok:false, error:'Response hết hạn'};
+      }
+      // Giải mã XOR
+      var key    = await _makeKey(username);
+      var cipher = _b64Dec(outer.d);
+      var plain  = _xorDec(cipher, key);
+      return JSON.parse(plain);
+    }catch(e){
+      return {ok:false, error:'Decrypt failed'};
+    }
+  }
+
+  // Lấy username từ session (inject từ server vào HTML)
+  function _getUsername(){
+    return window._U || document.body.getAttribute('data-u') || 'anon';
+  }
+
+  // Override apiFetch để tự động giải mã
+  var _prevApiFetch = window.apiFetch || window.fetch;
+  window.apiFetch = async function(url, opts){
+    var resp = await _prevApiFetch(url, opts);
+    if(!resp.ok) return resp;
+    // Clone response để có thể đọc lại
+    var clone = resp.clone();
+    try{
+      var json = await clone.json();
+      if(json && json.e){
+        // Có mã hóa → giải mã
+        var decrypted = await decryptApiResponse(json, _getUsername());
+        // Trả về Response giả với data đã giải mã
+        return new Response(JSON.stringify(decrypted),{
+          status: 200,
+          headers: {'Content-Type':'application/json'}
+        });
+      }
+    }catch(e){}
+    return resp;
+  };
+
+  // Expose để game files dùng
+  window._decrypt = decryptApiResponse;
+})();
+
 })();

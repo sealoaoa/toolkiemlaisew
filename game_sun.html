@@ -491,7 +491,7 @@ refresh();
 </script>
 <script src="/static/protect.js"></script>
 </head>
-<body>
+<body data-u="{{ session.get('username','') }}">
 <div id="particles-js"></div>
 <div class="header">
 <div class="game-title">🎲 SunWin</div>

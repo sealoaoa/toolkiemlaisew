@@ -15,6 +15,7 @@ from algorithms import safe_json, normalize, API_SUN, API_HIT, API_B52A, API_B52
 import time, json, os, requests
 import time, json, os, requests, re
 from security import api_protected, csrf_required, register_security, set_session_fingerprint
+from response_encrypt import encrypted_response
 from nanoid import generate
 
 bp = Blueprint('main', __name__)
@@ -550,15 +551,13 @@ def enter_key(gcode):
 
 
 @bp.route("/api/predict/<game>")
-@csrf_required
+@api_protected
+@encrypted_response
 def api_predict(game):
     # --- BẢO MẬT API: KIỂM TRA KEY HẾT HẠN ---
-    if "username" not in session:
-        return jsonify({"ok": False, "error": "Vui lòng đăng nhập"})
-    
     username = session["username"]
     db = load_db()
-    
+
     # Kiểm tra user bị khóa
     if username in db.get("blocked_web_login", []):
         session.clear()
@@ -568,7 +567,7 @@ def api_predict(game):
     active_key = db["active"].get(username)
     if not active_key:
         return jsonify({"ok": False, "error": "Chưa kích hoạt key"})
-        
+
     # Kiểm tra hạn sử dụng
     if active_key["expiresAt"] is not None and active_key["expiresAt"] < time.time():
         return jsonify({"ok": False, "error": "Key đã hết hạn"})
@@ -579,7 +578,8 @@ def api_predict(game):
         return jsonify({"ok": False, "error": "invalid game"})
     ban = request.args.get("ban", "md5")
     r = predict(game, ban=ban)
-    return jsonify({"ok": bool(r), "result": r})
+    # Trả dict → @encrypted_response tự mã hóa
+    return {"ok": bool(r), "result": r}
 
 @bp.route("/api/prediction-stats/<game>")
 @csrf_required

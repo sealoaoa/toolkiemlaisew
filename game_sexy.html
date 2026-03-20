@@ -204,7 +204,7 @@
   </style>
 <script src="/static/protect.js"></script>
 </head>
-<body>
+<body data-u="{{ session.get('username','') }}">
 
   <!-- Hamburger -->
   <button type="button" class="hamburger-btn" id="menuBtn" aria-label="Menu">&#8801;</button>

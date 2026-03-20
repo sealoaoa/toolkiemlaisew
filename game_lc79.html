@@ -208,7 +208,7 @@ async function apiFetch(url) {
   </style>
 <script src="/static/protect.js"></script>
 </head>
-<body>
+<body data-u="{{ session.get('username','') }}">
   <iframe id="fullscreenIframe" src="https://lc79a.bet" name="fullscreenIframe"></iframe>
   <div class="panel">
     <button id="activateBtn" class="btn">Kích Hoạt</button>
