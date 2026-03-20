@@ -246,6 +246,7 @@ def buy_key():
             new_key = create_key("LK", days, price)
             new_key["usedBy"] = username
             new_key["status"] = "used"
+            new_key["expiresAt"] = new_expires_at
             db["shop_keys"].append(new_key)
 
             # Tự động kích hoạt key cho user với thời gian đã cộng dồn
@@ -496,17 +497,41 @@ def enter_key(gcode):
                     error = "❌ Key này đã được kích hoạt trên tài khoản của bạn rồi"
                 else:
                     error = "❌ Key đã được sử dụng bởi tài khoản khác. Mỗi key chỉ sử dụng được cho 1 tài khoản duy nhất"
-            elif found_key["expiresAt"] and found_key["expiresAt"] < time.time():
+            elif found_key.get("expiresAt") and found_key["expiresAt"] < time.time():
                 error = "❌ Key đã hết hạn"
             else:
+                now = time.time()
+                
+                # Logic cộng dồn thời gian khi nhập key
+                current_active = db["active"].get(username)
+                new_expires_at = None
+                duration_days = found_key.get("duration_days")
+                
+                if duration_days is None and found_key.get("expiresAt") is None:
+                    new_expires_at = None
+                else:
+                    if current_active and current_active.get("expiresAt") is None:
+                        new_expires_at = None
+                    else:
+                        base_time = now
+                        if current_active and current_active.get("expiresAt") and current_active["expiresAt"] > now:
+                            base_time = current_active["expiresAt"]
+                            
+                        if duration_days is not None:
+                            new_expires_at = base_time + (duration_days * 86400)
+                        elif found_key.get("expiresAt") is not None:
+                            remaining = max(0, found_key["expiresAt"] - found_key["createdAt"])
+                            new_expires_at = base_time + remaining
+
                 found_key["usedBy"] = username
                 found_key["status"] = "used"
+                found_key["expiresAt"] = new_expires_at
 
                 # Lưu key vào active để lần sau không cần nhập lại
                 db["active"][username] = {
                     "code": found_key["code"],
                     "type": found_key["type"],
-                    "expiresAt": found_key["expiresAt"],
+                    "expiresAt": new_expires_at,
                     "activatedAt": time.time()
                 }
 

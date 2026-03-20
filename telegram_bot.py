@@ -620,10 +620,15 @@ async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status_icon = "🟡"
 
         # Hết hạn gọn
-        if k["expiresAt"] is None:
-            exp = "♾️"
+        if k["status"] == "available" and k.get("duration_days") is not None:
+            exp = f"{k['duration_days']} ngày"
+        elif k.get("expiresAt") is None:
+            if k.get("duration_days") is None:
+                exp = "♾️"
+            else:
+                exp = f"{k['duration_days']} ngày"
         else:
-            exp = time.strftime("%d/%m", time.localtime(k["expiresAt"]))
+            exp = time.strftime("%d/%m", time.localtime(k.get("expiresAt")))
 
         # User gọn
         used_by = k.get("usedBy", "-")
