@@ -251,7 +251,7 @@ async function apiFetch(url) {
   let blinkIntervalId = null; 
   let currentSessionId = null; // Biến lưu trữ phiên hiện tại từ API
   let isAwaitingNewSession = false; // Biến cờ để ngăn fetchPrediction() gọi startPredictionBlink() trong thời gian chờ 6 giây
-  const API_URL = 'https://apilc79-predictor.onrender.com/api/taixiumd5/lc79';
+  const API_URL = '/api/predict/lc79'; // Proxy qua server - ẩn API nguồn
 
   /* --- Logout Logic (ĐÃ SỬA: Chuyển về dashboardtool.html) --- */
   logoutBtn.addEventListener('click', () => {
@@ -273,12 +273,13 @@ async function apiFetch(url) {
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
-      const data = await response.json();
-      console.log("Dữ liệu API:", data);
+      const json = await response.json();
+      if (!json.ok) throw new Error(json.error || 'API lỗi');
+      const data = json.result; // API nội bộ bọc trong {ok, result}
 
       const rawPrediction = data.du_doan;
-      const predictedResult = rawPrediction.toLowerCase() === 'tài' ? 'T' : 'X';
-      const nextSessionId = data.phien_hien_tai;
+      const predictedResult = rawPrediction && rawPrediction.toLowerCase() === 'tài' ? 'T' : 'X';
+      const nextSessionId = data.phien_du_doan || data.phien || '---';
       const confidence = data.do_tin_cay;
       
       // Định dạng lại kết quả (Phiên, Dự đoán, Độ tin cậy)
