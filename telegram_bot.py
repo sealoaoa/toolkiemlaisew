@@ -1034,6 +1034,129 @@ async def cmd_xoalog(update, context):
     except Exception as e:
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
+
+async def cmd_banip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ban IP - chặn truy cập từ IP đó.
+    Cú pháp: /banip <ip> [giờ]
+    Ví dụ:   /banip 1.2.3.4
+             /banip 1.2.3.4 24
+    """
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Bạn không có quyền dùng lệnh này")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "❌ Sai cú pháp!\n\n"
+            "✅ Đúng: /banip <ip> [số giờ]\n"
+            "Ví dụ:\n"
+            "/banip 1.2.3.4\n"
+            "/banip 1.2.3.4 24"
+        )
+        return
+
+    ip = context.args[0].strip()
+    hours = 24
+    if len(context.args) >= 2:
+        try:
+            hours = int(context.args[1])
+        except ValueError:
+            pass
+
+    # Lưu vào database
+    db = load_db()
+    if "banned_ips" not in db:
+        db["banned_ips"] = {}
+
+    import time as _t
+    ban_until = _t.time() + hours * 3600
+    db["banned_ips"][ip] = {
+        "ban_until": ban_until,
+        "hours": hours,
+        "banned_at": _t.strftime("%H:%M:%S %d/%m/%Y"),
+        "by": "admin"
+    }
+    save_db(db)
+
+    # Đồng thời báo cho intrusion_detector nếu đang chạy
+    try:
+        from intrusion_detector import _banned_ips
+        _banned_ips[ip] = ban_until
+    except Exception:
+        pass
+
+    await update.message.reply_text(
+        f"✅ ĐÃ BAN IP THÀNH CÔNG!\n\n"
+        f"📡 IP: {ip}\n"
+        f"⏳ Thời gian: {hours} giờ\n"
+        f"🕐 Hết hạn: {_t.strftime('%H:%M %d/%m/%Y', _t.localtime(ban_until))}\n\n"
+        f"👉 Gỡ ban: /unbanip {ip}"
+    )
+
+
+async def cmd_unbanip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gỡ ban IP. Cú pháp: /unbanip <ip>"""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Bạn không có quyền dùng lệnh này")
+        return
+
+    if not context.args:
+        await update.message.reply_text("❌ Cú pháp: /unbanip <ip>")
+        return
+
+    ip = context.args[0].strip()
+    db = load_db()
+
+    removed = False
+    if "banned_ips" in db and ip in db["banned_ips"]:
+        del db["banned_ips"][ip]
+        save_db(db)
+        removed = True
+
+    try:
+        from intrusion_detector import _banned_ips
+        if ip in _banned_ips:
+            del _banned_ips[ip]
+            removed = True
+    except Exception:
+        pass
+
+    if removed:
+        await update.message.reply_text(f"✅ Đã gỡ ban IP: {ip}")
+    else:
+        await update.message.reply_text(f"❌ IP {ip} không có trong danh sách ban")
+
+
+async def cmd_listbanip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xem danh sách IP đang bị ban. Cú pháp: /listbanip"""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Bạn không có quyền dùng lệnh này")
+        return
+
+    import time as _t
+    db = load_db()
+    banned = db.get("banned_ips", {})
+
+    if not banned:
+        await update.message.reply_text("✅ Không có IP nào đang bị ban.")
+        return
+
+    now = _t.time()
+    lines = [f"🚫 DANH SÁCH IP BAN ({len(banned)} IP):\n"]
+    for ip, info in list(banned.items()):
+        remaining = info.get("ban_until", 0) - now
+        if remaining <= 0:
+            # Hết hạn → xóa
+            del db["banned_ips"][ip]
+            continue
+        hours_left = int(remaining // 3600)
+        mins_left  = int((remaining % 3600) // 60)
+        lines.append(f"📡 {ip} — còn {hours_left}h{mins_left}m")
+
+    save_db(db)
+    await update.message.reply_text("\n".join(lines))
+
 async def cmd_iframegame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Đổi link iframe cho game.
@@ -1591,7 +1714,16 @@ async def start_bot_async():
 
     try:
         # ✅ FIX: Dùng ApplicationBuilder với job_queue tắt để tránh lỗi APScheduler
-        builder = Application.builder().token(BOT_TOKEN)
+        from telegram.request import HTTPXRequest
+        # Tăng timeout tránh lỗi mạng Render free tier
+        http_request = HTTPXRequest(
+            connection_pool_size=8,
+            read_timeout=30,
+            write_timeout=30,
+            connect_timeout=30,
+            pool_timeout=30,
+        )
+        builder = Application.builder().token(BOT_TOKEN).request(http_request)
         try:
             # Thử bật job_queue nếu có APScheduler
             config.bot_app = builder.build()
@@ -1600,6 +1732,28 @@ async def start_bot_async():
             job_queue_available = False
 
         bot_app = config.bot_app
+
+        # ── Error handler: bắt NetworkError / TimedOut không crash bot ──────
+        async def error_handler(update, context):
+            import traceback
+            from telegram.error import NetworkError, TimedOut, RetryAfter, Forbidden
+            err = context.error
+            if isinstance(err, (NetworkError, TimedOut)):
+                print(f"[BOT] ⚠️ Network lỗi tạm thời (Render): {err} - tự tiếp tục")
+                return   # Bỏ qua, polling tự thử lại
+            if isinstance(err, RetryAfter):
+                print(f"[BOT] ⏳ Telegram rate limit - chờ {err.retry_after}s")
+                await asyncio.sleep(err.retry_after)
+                return
+            if isinstance(err, Forbidden):
+                print(f"[BOT] 🔒 Bot bị block bởi user: {err}")
+                return
+            # Lỗi khác thì log đầy đủ
+            print(f"[BOT] ❌ Lỗi không xử lý được: {err}")
+            traceback.print_exc()
+
+        bot_app.add_error_handler(error_handler)
+        # ─────────────────────────────────────────────────────────────────────
 
         # Thêm command handlers TRƯỚC message handler để đảm bảo ưu tiên xử lý
         bot_app.add_handler(CommandHandler("start", cmd_start))
@@ -1623,6 +1777,9 @@ async def start_bot_async():
         bot_app.add_handler(CommandHandler("xuatdata", cmd_xuatdata))
         bot_app.add_handler(CommandHandler("iframegame", cmd_iframegame))
         bot_app.add_handler(CommandHandler("xemiframe", cmd_xemiframe))
+        bot_app.add_handler(CommandHandler("banip", cmd_banip))
+        bot_app.add_handler(CommandHandler("unbanip", cmd_unbanip))
+        bot_app.add_handler(CommandHandler("listbanip", cmd_listbanip))
         bot_app.add_handler(CommandHandler("xemtancon", cmd_xemtancon))
         bot_app.add_handler(CommandHandler("xoalog", cmd_xoalog))
 
@@ -1667,12 +1824,23 @@ async def start_bot_async():
             await bot_app.bot.delete_webhook(drop_pending_updates=True)
             print("✅ Bắt đầu polling...")
 
-            await bot_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+            await bot_app.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True,
+                poll_interval=1.0,        # poll mỗi 1 giây
+                timeout=20,               # long-poll 20 giây / lần
+                bootstrap_retries=5,      # thử lại 5 lần nếu Telegram lỗi khi start
+            )
             print("✅ Bot đang lắng nghe tin nhắn!")
 
-            # Keep running
+            # Keep running - in heartbeat mỗi 5 phút
+            _hb = 0
             while True:
-                await asyncio.sleep(1)
+                await asyncio.sleep(10)
+                _hb += 10
+                if _hb >= 300:
+                    print("[BOT] 💓 Heartbeat - bot vẫn đang chạy", flush=True)
+                    _hb = 0
 
     except Exception as e:
         print(f"❌ Lỗi khi khởi động bot: {str(e)}")
@@ -1684,26 +1852,33 @@ async def start_bot_async():
 
 
 def run_bot_in_thread():
-    """Chạy bot trong thread riêng, tự động restart khi gặp lỗi Conflict"""
+    """Chạy bot trong thread riêng, tự động restart khi gặp lỗi"""
     import time as _time
+    restart_count = 0
     while True:
         loop = None
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            restart_count += 1
+            print(f"[BOT] 🔄 Lần khởi động #{restart_count}", flush=True)
             loop.run_until_complete(start_bot_async())
         except Exception as e:
             err = str(e)
-            print(f"[BOT] Lỗi: {err}")
+            print(f"[BOT] ❌ Lỗi: {err}", flush=True)
             if "Conflict" in err or "terminated by other getUpdates" in err:
-                print("[BOT] ⚠️ Xung đột bot. Chờ 15 giây rồi restart...")
-                _time.sleep(15)
+                wait = 30
+                print(f"[BOT] ⚠️ Xung đột bot. Chờ {wait}s rồi restart...", flush=True)
+            elif "Network" in err or "TimeOut" in err or "timed out" in err.lower():
+                wait = 5
+                print(f"[BOT] 🌐 Lỗi mạng tạm thời. Chờ {wait}s...", flush=True)
             else:
-                print("[BOT] Chờ 10 giây rồi restart...")
-                _time.sleep(10)
+                wait = min(10 * restart_count, 60)  # backoff tối đa 60s
+                print(f"[BOT] Chờ {wait}s rồi restart...", flush=True)
+            _time.sleep(wait)
         finally:
             try:
-                if loop:
+                if loop and not loop.is_closed():
                     loop.close()
             except:
                 pass

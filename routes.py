@@ -551,11 +551,20 @@ def enter_key(gcode):
 
 
 @bp.route("/api/predict/<game>")
-@api_protected
 def api_predict(game):
-    # --- BẢO MẬT API: KIỂM TRA KEY HẾT HẠN ---
+    # --- KIỂM TRA ĐĂNG NHẬP ---
+    if "username" not in session:
+        _alert_crack_attempt(None, request, game)
+        return jsonify({"ok": False, "error": "có trình đéo mà lấy 🖕 Mua key: t.me/sewdangcap"})
+
     username = session["username"]
     db = load_db()
+
+    # Kiểm tra có CSRF token không (gọi từ ngoài, không qua web)
+    csrf_token = request.headers.get("X-CSRF-Token", "").strip()
+    if not csrf_token:
+        _alert_crack_attempt(username, request, game)
+        return jsonify({"ok": False, "error": f"có trình đéo mà lấy 🖕 ({username}) Mua key: t.me/sewdangcap"})
 
     # Kiểm tra user bị khóa
     if username in db.get("blocked_web_login", []):
@@ -570,7 +579,6 @@ def api_predict(game):
     # Kiểm tra hạn sử dụng
     if active_key["expiresAt"] is not None and active_key["expiresAt"] < time.time():
         return jsonify({"ok": False, "error": "Key đã hết hạn"})
-    # -----------------------------------------
 
     game = game.lower()
     if game not in HIST:
@@ -578,6 +586,35 @@ def api_predict(game):
     ban = request.args.get("ban", "md5")
     r = predict(game, ban=ban)
     return jsonify({"ok": bool(r), "result": r})
+
+
+def _alert_crack_attempt(username, req, game):
+    """Gửi cảnh báo Telegram khi phát hiện crack API"""
+    try:
+        ip = (req.headers.get("CF-Connecting-IP")
+              or req.headers.get("X-Forwarded-For","").split(",")[0]
+              or req.remote_addr or "unknown").strip()
+        ua = req.headers.get("User-Agent","N/A")[:100]
+        t  = __import__("time").strftime("%H:%M:%S %d/%m/%Y")
+
+        msg = (
+            f"🚨 PHÁT HIỆN CRACK API\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Tài khoản: {username or '(chưa đăng nhập)'}\n"
+            f"🎮 Game: {game}\n"
+            f"📡 IP: {ip}\n"
+            f"💻 UA: {ua}\n"
+            f"🕐 {t}\n\n"
+            f"👉 Ban web: /band {username}\n"
+            f"👉 Ban IP:  /banip {ip}"
+        )
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": ADMIN_ID, "text": msg},
+            timeout=4
+        )
+    except Exception as e:
+        print(f"[ALERT ERROR] {e}")
 
 @bp.route("/api/prediction-stats/<game>")
 @csrf_required
