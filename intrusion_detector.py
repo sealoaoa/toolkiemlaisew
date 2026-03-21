@@ -88,26 +88,57 @@ def send_alert(ip, username, path, ua):
         print(f"[ALERT ERROR] {e}")
 
 def detect_and_block():
-    from flask import jsonify
+    from flask import jsonify, redirect, url_for
 
-    # Chỉ kiểm tra /api/predict/*
+    # Bỏ qua static files
+    if request.path.startswith("/static/"):
+        return None
+
+    ip = get_real_ip()
+
+    # ── IP bị admin ban → chặn TOÀN BỘ trang ──────────────────────────────
+    if is_banned(ip):
+        # Nếu là request API → trả JSON
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "ok": False,
+                "error": "có trình đéo mà lấy 🖕 IP bị chặn. Mua key: t.me/sewdangcap",
+                "code": 403
+            }), 403
+        # Nếu là trang web → hiện trang chặn
+        from flask import make_response
+        html = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Blocked</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a1628;display:flex;align-items:center;justify-content:center;
+     height:100vh;font-family:Arial,sans-serif;color:#fff;text-align:center}
+.box{padding:40px;max-width:420px}
+.icon{font-size:72px;margin-bottom:20px}
+h1{color:#ff4444;font-size:26px;margin-bottom:12px}
+p{color:#aaa;font-size:15px;line-height:1.6;margin-bottom:8px}
+a{color:#00e6b4;text-decoration:none;font-weight:bold}
+</style></head>
+<body><div class="box">
+<div class="icon">🚫</div>
+<h1>IP của bạn đã bị chặn</h1>
+<p>Bạn đã vi phạm điều khoản sử dụng của <strong>TOOLKIEMLAISEW.SITE</strong></p>
+<p>Để được hỗ trợ hoặc khiếu nại, liên hệ admin:</p>
+<p><a href="https://t.me/sewdangcap">📩 t.me/sewdangcap</a></p>
+</div></body></html>"""
+        resp = make_response(html, 403)
+        return resp
+
+    # ── Chỉ kiểm tra crack khi gọi /api/predict/* ──────────────────────────
     if not request.path.startswith("/api/predict"):
         return None
 
-    ip       = get_real_ip()
     username = session.get("username")
     ua       = request.headers.get("User-Agent","N/A")
     path     = request.path
 
-    # 1. IP bị admin ban thủ công → chặn
-    if is_banned(ip):
-        return jsonify({
-            "ok": False,
-            "error": "có trình đéo mà lấy 🖕 IP của bạn đã bị chặn. Mua key: t.me/sewdangcap",
-            "code": 403
-        }), 403
-
-    # 2. Không có CSRF token → gọi từ ngoài → log + cảnh báo (KHÔNG tự ban)
+    # Không có CSRF token → gọi từ ngoài → log + cảnh báo
     csrf = request.headers.get("X-CSRF-Token","").strip()
     if not csrf:
         reason = "Gọi API không có CSRF token"
@@ -116,7 +147,7 @@ def detect_and_block():
         print(f"[CRACK] {ip} | {username} | {reason}")
         return jsonify({
             "ok": False,
-            "error": f"có trình đéo mà lấy 🖕 Mua key: t.me/sewdangcap",
+            "error": "có trình đéo mà lấy 🖕 Mua key: t.me/sewdangcap",
             "code": 403
         }), 403
 
