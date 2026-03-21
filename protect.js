@@ -66,22 +66,46 @@ document.addEventListener('contextmenu',function(e){
 // ══════════════════════════════════════════════════════════════
 function _nuke(){
   if(_dead)return; _dead=true;
+
+  // ── DỪNG TOOL NGAY LẬP TỨC ──────────────────
+  // 1. Xóa tất cả interval/timeout → dừng poll API
+  try{
+    var _hid=setTimeout(function(){},0);
+    for(var _i=0;_i<=_hid;_i++){clearInterval(_i);clearTimeout(_i);}
+  }catch(e){}
+
+  // 2. Override fetch → không gọi được API nữa
+  try{
+    var _blocked=function(){return Promise.reject(new Error('x'));};
+    Object.defineProperty(window,'fetch',{value:_blocked,writable:false,configurable:false});
+    window.apiFetch=_blocked;
+    window._origFetch=_blocked;
+  }catch(e){window.fetch=function(){return Promise.reject(new Error('x'));}}
+
+  // 3. Override XMLHttpRequest
+  try{
+    window.XMLHttpRequest=function(){
+      this.open=this.send=this.setRequestHeader=function(){};
+      this.readyState=4;this.status=403;
+    };
+  }catch(e){}
+
+  // 4. Xóa DOM + hiện thông báo
   try{document.documentElement.innerHTML='';}catch(e){}
   document.open();
   document.write(
     '<style>*{margin:0;padding:0;background:#0a1628}</style>'+
     '<div style="display:flex;height:100vh;align-items:center;justify-content:center;'+
     'flex-direction:column;gap:18px;font-family:sans-serif;color:#ff4444;">'+
-    '<div style="font-size:72px">🚫</div>'+
-    '<div style="font-size:24px;font-weight:bold">Phiên đã bị hủy</div>'+
-    '<div style="font-size:14px;color:#666;text-align:center;max-width:340px">'+
-    'Phát hiện công cụ không hợp lệ.<br>Vui lòng đăng nhập lại.</div>'+
-    '<button onclick="location.href=\'/logout\'" '+
-    'style="padding:12px 28px;background:#00e6b4;border:none;border-radius:10px;'+
-    'color:#0a1628;font-size:15px;font-weight:bold;cursor:pointer">Đăng nhập lại</button></div>'
+    '<div style="font-size:72px">🛑</div>'+
+    '<div style="font-size:24px;font-weight:bold">Tool đã bị dừng</div>'+
+    '<div style="font-size:14px;color:#aaa;text-align:center;max-width:360px">'+
+    'Phát hiện DevTools đang mở.<br>Đóng DevTools và tải lại trang để tiếp tục.</div>'+
+    '<button onclick="location.reload()" '+
+    'style="margin-top:8px;padding:12px 28px;background:#00e6b4;border:none;border-radius:10px;'+
+    'color:#0a1628;font-size:15px;font-weight:bold;cursor:pointer">🔄 Tải lại trang</button></div>'
   );
   document.close();
-  setTimeout(function(){try{location.href='/logout';}catch(e){}},1200);
 }
 
 // A: debugger timing
