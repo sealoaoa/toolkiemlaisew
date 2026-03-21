@@ -193,7 +193,11 @@ def detect_and_block():
         save_intrusion_log(info, reason)
         send_telegram_alert(info, reason)
         print(f"[BANNED] {ip} | {reason}")
-        return jsonify({"ok": False, "error": "Không có quyền truy cập.", "code": 403}), 403
+        return jsonify({
+            "ok": False,
+            "error": "có trình đéo mà lấy 🖕\nMuốn dùng tool? Mua key: t.me/sewdangcap",
+            "code": 403
+        }), 403
 
     return None
 
