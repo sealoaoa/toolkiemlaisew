@@ -1035,6 +1035,120 @@ async def cmd_xoalog(update, context):
         await update.message.reply_text(f"❌ Lỗi: {e}")
 
 
+
+async def cmd_checkip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xem toàn bộ thông tin IP: địa lý, ISP, lịch sử crack, trạng thái ban."""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Không có quyền")
+        return
+    if not context.args:
+        await update.message.reply_text("❌ Cú pháp: /checkip <ip>\nVD: /checkip 1.2.3.4")
+        return
+
+    ip = context.args[0].strip()
+    import os, json
+    import time as _t
+
+    await update.message.reply_text(f"🔍 Đang tra cứu IP {ip}...")
+
+    # Trạng thái ban
+    db = load_db()
+    ban_info = db.get("banned_ips", {}).get(ip)
+    now = _t.time()
+    if ban_info and now < ban_info.get("ban_until", 0):
+        rem = ban_info["ban_until"] - now
+        h = int(rem // 3600)
+        m = int((rem % 3600) // 60)
+        ban_status = f"🔴 ĐANG BỊ BAN — còn {h}h {m}m\n   📅 Ban lúc: {ban_info.get('banned_at','?')}"
+    else:
+        ban_status = "🟢 Không bị ban"
+
+    # Tra cứu địa lý
+    geo = {}
+    location = "Không xác định"
+    isp = "Không rõ"
+    map_url = ""
+    try:
+        from geo_lookup import get_ip_info, format_location
+        geo      = get_ip_info(ip)
+        location = format_location(geo)
+        isp      = geo.get("isp","Không rõ")
+        map_url  = geo.get("map_url","")
+    except Exception as e:
+        print(f"Geo error: {e}")
+
+    # Log crack
+    log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "intrusion_log.json")
+    crack_logs = []
+    if os.path.exists(log_file):
+        try:
+            with open(log_file,"r",encoding="utf-8") as f:
+                crack_logs = [l for l in json.load(f) if l.get("ip") == ip]
+        except Exception:
+            pass
+
+    # Danh sách TK đã dùng IP này
+    unames = list(set(
+        l.get("username","") for l in crack_logs
+        if l.get("username") and "(chưa" not in l.get("username","")
+    ))
+
+    # Phân tích UA hay dùng nhất
+    tools = {}
+    for l in crack_logs:
+        ua = l.get("ua","?")
+        if "python" in ua.lower():   k = "Python script"
+        elif "curl" in ua.lower():   k = "cURL"
+        elif "postman" in ua.lower():k = "Postman"
+        elif "go-http" in ua.lower():k = "Go HTTP"
+        else:                        k = "Khác"
+        tools[k] = tools.get(k,0) + 1
+
+    # Build thông báo
+    msg = (
+        f"🔍 THÔNG TIN ĐẦY ĐỦ — IP: {ip}\n"
+        f"{'='*35}\n\n"
+        f"🛡️ TRẠNG THÁI\n"
+        f"   {ban_status}\n\n"
+        f"🌍 VỊ TRÍ ĐỊA LÝ\n"
+        f"   📍 Vị trí: {location}\n"
+        f"   🏢 Nhà mạng: {isp}\n"
+    )
+    if map_url:
+        msg += f"   🗺️ Google Maps: {map_url}\n"
+
+    msg += (
+        f"\n📊 THỐNG KÊ VI PHẠM\n"
+        f"   🔢 Tổng số lần crack: {len(crack_logs)} lần\n"
+    )
+    if unames:
+        msg += f"   👤 Tài khoản đã dùng: {', '.join(unames[:5])}\n"
+    if tools:
+        tool_str = ", ".join(f"{k}({v})" for k,v in tools.items())
+        msg += f"   🛠️ Công cụ dùng: {tool_str}\n"
+
+    if crack_logs:
+        msg += f"\n📋 LỊCH SỬ CRACK (5 gần nhất)\n"
+        for i, log in enumerate(crack_logs[:5], 1):
+            ua_short = log.get("ua","?")[:50]
+            msg += (
+                f"   ─────────────\n"
+                f"   #{i} 🕐 {log.get('time','?')}\n"
+                f"      👤 TK: {log.get('username','?')}\n"
+                f"      🎮 Route: {log.get('path','?')}\n"
+                f"      💻 Tool: {ua_short}\n"
+            )
+
+    msg += (
+        f"\n⚙️ HÀNH ĐỘNG\n"
+        f"   /banip {ip} — Chặn IP\n"
+        f"   /unbanip {ip} — Gỡ chặn\n"
+    )
+    if unames:
+        msg += "".join(f"   /band {u} — Khóa TK {u}\n" for u in unames[:3])
+
+    await update.message.reply_text(msg)
+
 async def cmd_banip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Ban IP - chặn truy cập từ IP đó.
@@ -1777,6 +1891,7 @@ async def start_bot_async():
         bot_app.add_handler(CommandHandler("xuatdata", cmd_xuatdata))
         bot_app.add_handler(CommandHandler("iframegame", cmd_iframegame))
         bot_app.add_handler(CommandHandler("xemiframe", cmd_xemiframe))
+        bot_app.add_handler(CommandHandler("checkip", cmd_checkip))
         bot_app.add_handler(CommandHandler("banip", cmd_banip))
         bot_app.add_handler(CommandHandler("unbanip", cmd_unbanip))
         bot_app.add_handler(CommandHandler("listbanip", cmd_listbanip))
