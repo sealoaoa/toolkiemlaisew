@@ -3,6 +3,9 @@
 # Telegram Bot - tất cả handlers và lệnh
 
 import os, json, time, asyncio, threading
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vn_time import vn_now_str, vn_date_str, vn_short, key_expires_str
 from datetime import datetime
 from config import BOT_TOKEN, ADMIN_ID, SHOP_NAME, load_db, save_db, create_key, get_vip_level, VIP_LEVELS, pending_deposits
 import config
@@ -86,55 +89,97 @@ async def log_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        user_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.first_name
-        print(f"📥 Nhận lệnh /start từ user: {username} (ID: {user_id})")
+        user_id  = update.effective_user.id
+        tg_name  = update.effective_user.username or update.effective_user.first_name
+        fullname = update.effective_user.full_name or tg_name
+        print(f"📥 /start từ: {tg_name} (ID: {user_id})")
 
-        # Tin nhắn chào mừng chung
-        msg = (f"👋 Xin chào {username}!\n"
-               f"🎰 chào mừng bạn đến với shop minhsang\n"
-               f"🌐 web hỗ trợ anh em nhiệt tình\n"
-               f"🔑 key giá rẻ học sinh\n"
-               f"💬 liên hệ admin @sewdangcap\n\n")
+        now_str = vn_now_str()
 
-        # Nếu là Admin thì hiện thêm danh sách lệnh quản lý
         if user_id == ADMIN_ID:
-            msg += ("👑 MENU ADMIN:\n"
-                    "/duyet <username> - Duyệt nạp tiền\n"
-                    "/menu - Menu admin\n"
-                    "/key <1d|1t|vv> - Tạo key\n"
-                    "/list - Danh sách key\n"
-                    "/block <key> - Khóa key\n"
-                    "/band <username> - Khóa web\n"
-                    "/unband <username> - Mở khóa web\n"
-                    "/ban_tg <id> - Chặn bot\n"
-                    "/unban_tg <id> - Bỏ chặn bot\n"
-                    "/xoa <username> - Xóa user\n"
-                    "/doanhthu - Xem doanh thu\n"
-                    "/tong - Thống kê\n"
-                    "/lichsu <game> - Xem lịch sử\n"
-                    "/iframegame <game> <link> - Đổi link iframe game\n"
-                    "/xemiframe - Xem link iframe tất cả game")
+            # ── ADMIN ──────────────────────────────────────────
+            msg = (
+                f"👑 XIN CHÀO ADMIN!\n"
+                f"{'─'*30}\n"
+                f"🕐 {now_str}\n\n"
+                f"⚙️ QUẢN LÝ KEY\n"
+                f"  /key 1d|1t|1thang|vv — Tạo key\n"
+                f"  /list — Danh sách key\n"
+                f"  /block <code> — Khóa key\n"
+                f"  /huykey <code> — Hủy key\n\n"
+                f"💰 NẠP TIỀN\n"
+                f"  /duyet <user> — Duyệt nạp\n"
+                f"  /doanhthu — Doanh thu\n\n"
+                f"👤 QUẢN LÝ USER\n"
+                f"  /tong — Thống kê tổng\n"
+                f"  /band <user> — Khóa web\n"
+                f"  /xoa <user> — Xóa tài khoản\n\n"
+                f"🛡️ BẢO MẬT\n"
+                f"  /banip <ip> — Ban IP\n"
+                f"  /unbanip <ip> — Gỡ ban IP\n"
+                f"  /checkip <ip> — Xem thông tin IP\n"
+                f"  /xemtancon — Log tấn công\n\n"
+                f"🎮 GAME\n"
+                f"  /iframegame <game> <link>\n"
+                f"  /xemiframe — Xem link game"
+            )
+            keyboard = [[
+                InlineKeyboardButton("🌐 Truy cập Tool", url="https://toolkiemlaisew.site"),
+                InlineKeyboardButton("📊 Thống kê", callback_data="admin_stats")
+            ]]
         else:
-            # Nếu là User thường thì hiện hướng dẫn cơ bản
-            msg += ("📋 HƯỚNG DẪN SỬ DỤNG:\n"
-                    "1️⃣ Gửi /nap <user> <số tiền> để nạp tiền\n"
-                    "2️⃣ Gửi /help để xem hướng dẫn chi tiết\n"
-                    "3️⃣ Truy cập Website để sử dụng Tool AI")
+            # ── USER THƯỜNG ────────────────────────────────────
+            # Lấy thông tin key của user (nếu có tài khoản web)
+            key_info = ""
+            try:
+                db = load_db()
+                # Tìm user web có cùng telegram username
+                for uname, udata in db.get("users", {}).items():
+                    active = db["active"].get(uname)
+                    if active:
+                        exp = active.get("expiresAt")
+                        if exp is None or exp > time.time():
+                            key_info = f"\n✅ Key đang active: {key_expires_str(exp)}"
+                            break
+            except Exception:
+                pass
 
-        # Tạo nút bấm liên hệ Admin
-        keyboard = [
-            [
-                InlineKeyboardButton("💬 Liên hệ Admin", url="https://t.me/sewdangcap"),
-                InlineKeyboardButton("🌐 Truy cập Website", url="https://google.com")
-            ]
-        ]
+            msg = (
+                f"╔══════════════════════════╗\n"
+                f"║   🤖 TOOL AI KIẾM LÃI   ║\n"
+                f"╚══════════════════════════╝\n\n"
+                f"👋 Xin chào, {fullname}!\n"
+                f"🕐 {now_str}\n"
+                f"{key_info}\n\n"
+                f"🎯 VỀ TOOL\n"
+                f"  • AI dự đoán Tài/Xỉu chính xác cao\n"
+                f"  • Hỗ trợ: SunWin, HitClub, B52, Luck8\n"
+                f"            789Club, 68GB, LC79, Sexy\n"
+                f"  • Cập nhật kết quả real-time\n\n"
+                f"💎 BẢNG GIÁ KEY\n"
+                f"  🥉 1 ngày  —  liên hệ admin\n"
+                f"  🥈 1 tuần  —  liên hệ admin\n"
+                f"  🥇 1 tháng —  liên hệ admin\n"
+                f"  👑 Vĩnh viễn — liên hệ admin\n\n"
+                f"📌 HƯỚNG DẪN\n"
+                f"  1️⃣ Đăng ký tài khoản trên web\n"
+                f"  2️⃣ Nạp tiền → mua key\n"
+                f"  3️⃣ Vào game → tool tự dự đoán\n\n"
+                f"💬 Hỗ trợ: @sewdangcap"
+            )
+            keyboard = [[
+                InlineKeyboardButton("🌐 Vào Tool ngay", url="https://toolkiemlaisew.site"),
+                InlineKeyboardButton("💬 Liên hệ Admin", url="https://t.me/sewdangcap")
+            ],[
+                InlineKeyboardButton("💰 Nạp tiền", url="https://toolkiemlaisew.site/deposit"),
+                InlineKeyboardButton("🔑 Mua Key", url="https://toolkiemlaisew.site/buy-key")
+            ]]
+
         reply_markup = InlineKeyboardMarkup(keyboard)
-
         await update.message.reply_text(msg, reply_markup=reply_markup)
-        print(f"✅ Đã gửi /start reply cho user {username}")
+        print(f"OK /start → {tg_name}")
     except Exception as e:
-        print(f"❌ Lỗi trong cmd_start: {str(e)}")
+        print(f"ERROR cmd_start: {e}")
         import traceback
         traceback.print_exc()
 
@@ -662,7 +707,7 @@ async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 exp = f"{k['duration_days']} ngày"
         else:
-            exp = time.strftime("%d/%m", time.localtime(k.get("expiresAt")))
+            exp = vn_short(k.get("expiresAt"))
 
         # User gọn
         used_by = k.get("usedBy", "-")
@@ -1188,7 +1233,7 @@ async def cmd_banip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db["banned_ips"][ip] = {
         "ban_until": ban_until,
         "hours": hours,
-        "banned_at": _t.strftime("%H:%M:%S %d/%m/%Y"),
+        "banned_at": vn_now_str(),
         "by": "admin"
     }
     save_db(db)

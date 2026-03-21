@@ -14,6 +14,7 @@ from predict import predict, get_formatted_history, load_history, save_history, 
 from algorithms import safe_json, normalize, API_SUN, API_HIT, API_B52A, API_B52B, API_LUCK8, API_SICBO, API_789, API_68GB, API_LC79
 import time, json, os, requests
 import time, json, os, requests, re
+from vn_time import vn_strftime, vn_date_str, vn_short, key_expires_str
 from security import api_protected, csrf_required, register_security, set_session_fingerprint
 from response_encrypt import encrypted_response
 from nanoid import generate
@@ -126,8 +127,7 @@ def menu():
             key_expires = "Vĩnh viễn"
         elif active_key["expiresAt"] > time.time():
             has_active_key = True
-            key_expires = time.strftime(
-                "%d/%m/%Y %H:%M", time.localtime(active_key["expiresAt"]))
+            key_expires = key_expires_str(active_key["expiresAt"])
 
     return render_template_string(HTML_MENU,
                                   balance=balance,
@@ -150,8 +150,7 @@ def account():
     user = db["users"][username]
     user_id = user.get("user_id", "N/A")
     balance = user.get("balance", 0)
-    created_at = time.strftime(
-        "%d/%m/%Y %H:%M", time.localtime(user.get("created_at", time.time())))
+    created_at = vn_date_str(user.get("created_at", time.time()))
 
     # Lấy thông tin VIP
     vip_level = user.get("vip_level", "Đồng")
@@ -169,8 +168,7 @@ def account():
         for trans in db["transactions"]:
             if trans.get("username") == username:
                 trans_copy = trans.copy()
-                trans_copy["time_str"] = time.strftime(
-                    "%d/%m/%Y %H:%M", time.localtime(trans["time"]))
+                trans_copy["time_str"] = vn_date_str(trans["time"])
                 user_transactions.append(trans_copy)
         # Sắp xếp theo thời gian mới nhất
         user_transactions.sort(key=lambda x: x["time"], reverse=True)
@@ -377,6 +375,26 @@ def sepay_webhook():
     res = jsonify(result)
     res.headers["Access-Control-Allow-Origin"] = "*"
     return res
+
+
+@bp.route("/api/check-key")
+def api_check_key():
+    """JS gọi mỗi 30s để kiểm tra key còn hạn không - kick ngay nếu hết"""
+    if "username" not in session:
+        return jsonify({"ok": False, "expired": True})
+    db       = load_db()
+    username = session["username"]
+    active   = db["active"].get(username)
+    if not active:
+        return jsonify({"ok": False, "expired": True, "reason": "Chưa kích hoạt key"})
+    if active["expiresAt"] is not None and active["expiresAt"] < time.time():
+        del db["active"][username]
+        save_db(db)
+        return jsonify({"ok": False, "expired": True, "reason": "Key đã hết hạn"})
+    # Trả về thời gian còn lại
+    remaining = None if active["expiresAt"] is None else int(active["expiresAt"] - time.time())
+    return jsonify({"ok": True, "expired": False, "remaining": remaining,
+                    "expires": key_expires_str(active["expiresAt"])})
 
 
 @bp.route("/api/balance")
