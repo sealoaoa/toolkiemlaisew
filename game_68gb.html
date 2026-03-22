@@ -331,8 +331,7 @@ function updateRobotUI(phien, pred, conf){
         confidenceBox.style.display = "none";
         return;
     }
-    let phienTiepTheo = parseInt(phien) + 1;
-    sessionInfo.innerHTML = `Phiên: #${phienTiepTheo}`;
+    sessionInfo.innerHTML = `Phiên: #${phien}`;
     sessionInfo.style.display = "block";
     let confPercent = conf ? Math.round(conf*100) : 72;
     if(pred && (pred==="Tài" || pred==="Xỉu")){
@@ -379,8 +378,7 @@ waitingText.innerHTML = "Đang tải dữ liệu...";
 confidenceBox.style.display = "none";
 return;
 }
-let phienTiepTheo = (phien && phien!=="---" && !isNaN(parseInt(phien))) ? (parseInt(phien) + 1) : "---";
-sessionInfo.innerHTML = `Phiên: #${phienTiepTheo}`;
+sessionInfo.innerHTML = `Phiên: #${phien}`;
 sessionInfo.style.display = "block";
 if(lastSession !== String(phien)){
 lastSession = String(phien);
@@ -460,12 +458,11 @@ let resultEl=document.getElementById("result");
 let statusEl=document.getElementById("status");
 if(!phienEl) return;
 let phien = data.phien || "N/A";
-let phienTiepTheo = phien !== "N/A" ? (parseInt(phien) + 1) : "N/A";
 if(phien!=="N/A" && lastSession!==phien){
 lastSession=phien;
 triggerRobotEffect();
 }
-phienEl.textContent="#"+phienTiepTheo;
+phienEl.textContent="#"+phien;
 let pred=data.du_doan || "N/A";
 let color=pred==="Tài"?"#00ff00":"#ff4444";
 predEl.innerHTML=`<span style="color:${color};text-shadow:0 0 15px ${color};">${pred}</span>`;
