@@ -1025,8 +1025,9 @@ def predict(game, ban="md5"):
             }
 
         # Lấy dữ liệu từ API (Format mới: xuc_xac_1, xuc_xac_2, tong, du_doan...)
-        phien = str(raw.get("Phien") or raw.get("phien_hien_tai") or raw.get("phien", "---"))
-        ket = normalize(raw.get("Ket_qua") or raw.get("ket_qua"))
+        # API mới: {"phien": 289090, "du_doan": "Xỉu", "ket_qua": ..., "do_tin_cay": ...}
+        phien = str(raw.get("phien") or raw.get("Phien") or raw.get("phien_hien_tai") or "---")
+        ket = normalize(raw.get("ket_qua") or raw.get("Ket_qua"))
         api_du_doan = normalize(raw.get("du_doan"))
         api_pattern = raw.get("pattern", "")
         
@@ -1228,7 +1229,19 @@ def predict(game, ban="md5"):
         }
 
     if game == "68gb":
-        raw = safe_json(API_68GB)
+        # API mới trả về {"data": [...]} - lọc lấy bàn xanh "key": "banxanh"
+        raw_all = safe_json(API_68GB)
+        raw = None
+        if raw_all:
+            data_list = raw_all.get("data", [])
+            if isinstance(data_list, list):
+                for item in data_list:
+                    if item.get("key") == "banxanh" or item.get("game","").upper() == "BÀN XANH":
+                        raw = item
+                        break
+            # Fallback: nếu API trả thẳng object (không có data wrapper)
+            if not raw and raw_all.get("key") == "banxanh":
+                raw = raw_all
         if not raw:
             # Fallback: Dự đoán từ lịch sử nội bộ nếu API lỗi
             du, conf = analyze(list(HIST["68gb"]), "68gb")
@@ -1253,8 +1266,9 @@ def predict(game, ban="md5"):
                 "history": get_formatted_history("68gb")
             }
             
-        phien = str(raw.get("Phien") or raw.get("phien_hien_tai") or raw.get("phien", "---"))
-        ket = normalize(raw.get("Ket_qua") or raw.get("ket_qua"))
+        # API mới: {"phien": 289090, "du_doan": "Xỉu", "ket_qua": ..., "do_tin_cay": ...}
+        phien = str(raw.get("phien") or raw.get("Phien") or raw.get("phien_hien_tai") or "---")
+        ket = normalize(raw.get("ket_qua") or raw.get("Ket_qua"))
 
         if ket and ket in ["Tài", "Xỉu"]:
             update_prediction_results("68gb", phien, ket)
@@ -1272,10 +1286,10 @@ def predict(game, ban="md5"):
             except:
                 phien_tiep_theo = "---"
                 
-        api_du = normalize(raw.get("du_doan") or raw.get("Du_doan"))
+        api_du = normalize(raw.get("du_doan") or raw.get("Du_doan") or raw.get("predict"))
         
         # Parse confidence
-        raw_conf = raw.get("do_tin_cay") or raw.get("Do_tin_cay")
+        raw_conf = raw.get("do_tin_cay") or raw.get("Do_tin_cay") or raw.get("confidence")
         api_conf = None
         try:
             if raw_conf:
