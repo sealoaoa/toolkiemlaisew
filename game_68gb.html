@@ -367,21 +367,24 @@ let waitingText = document.getElementById("waiting-text");
 let confidenceBox = document.getElementById("confidence-box");
 let confidenceText = document.getElementById("confidence");
 if(!sessionInfo) return;
-let phien = data.Phien || data.phien || data.Session || data.session || data.round || null;
-let rawPred = data.du_doan || data.du_doan_tiep_theo || data.prediction || data.Ket_qua || data.ket_qua || data.KetQua || null;
+// phien_du_doan = phiên đang dự đoán (hiển thị trên UI)
+// phien = phiên hiện tại (dùng để track thay đổi)
+let phienDuDoan = data.phien_du_doan || data.phien || null;
+let phienHienTai = data.phien || null;
+let rawPred = data.du_doan || data.du_doan_tiep_theo || data.prediction || null;
 let pred = normalizePred(rawPred);
 let conf = data.do_tin_cay || data.confidence || 0.72;
 let confPercent = conf > 1 ? Math.round(conf) : Math.round(conf * 100);
-if((!phien || phien==="---" || phien==="N/A") && !pred){
+if((!phienDuDoan || phienDuDoan==="---") && !pred){
 sessionInfo.innerHTML = "Đang kết nối...";
 waitingText.innerHTML = "Đang tải dữ liệu...";
 confidenceBox.style.display = "none";
 return;
 }
-sessionInfo.innerHTML = `Phiên: #${phien}`;
+sessionInfo.innerHTML = `Phiên: #${phienDuDoan}`;
 sessionInfo.style.display = "block";
-if(lastSession !== String(phien)){
-lastSession = String(phien);
+if(lastSession !== String(phienHienTai)){
+lastSession = String(phienHienTai);
 lastPredictedSession = null;
 triggerRobotEffect();
 }
@@ -457,12 +460,13 @@ let predEl=document.getElementById("prediction");
 let resultEl=document.getElementById("result");
 let statusEl=document.getElementById("status");
 if(!phienEl) return;
-let phien = data.phien || "N/A";
-if(phien!=="N/A" && lastSession!==phien){
-lastSession=phien;
+let phienDuDoan = data.phien_du_doan || data.phien || "N/A";
+let phienHienTai = data.phien || "N/A";
+if(phienHienTai!=="N/A" && lastSession!==phienHienTai){
+lastSession=phienHienTai;
 triggerRobotEffect();
 }
-phienEl.textContent="#"+phien;
+phienEl.textContent="#"+phienDuDoan;
 let pred=data.du_doan || "N/A";
 let color=pred==="Tài"?"#00ff00":"#ff4444";
 predEl.innerHTML=`<span style="color:${color};text-shadow:0 0 15px ${color};">${pred}</span>`;
