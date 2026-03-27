@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
-# ================== app.py ==================
-# File chạy chính - khởi động Flask web + Telegram bot
-
+# app.py
 import os, sys, subprocess, threading, asyncio
 
-# Force flush log để Render hiện ngay lập tức
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
@@ -12,7 +9,6 @@ def install(package):
     print(f"⏳ Đang tự động cài đặt thư viện: {package}...", flush=True)
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
-# Auto-install thư viện cần thiết
 REQUIRED_PACKAGES = [
     ("requests", "requests"),
     ("flask", "flask"),
@@ -35,14 +31,13 @@ for package, module in REQUIRED_PACKAGES:
 
 from flask import Flask
 from flask_cors import CORS
-from config import SECRET_KEY, PORT
+from config import SECRET_KEY, PORT   # ← import đúng
 from predict import load_history, load_prediction_history, load_cau_history
 from routes import register_routes
 from domain_guard import register_domain_guard
 from intrusion_detector import register_intrusion_detector
-from security import register_security  # ← Bảo mật tổng hợp cấp cao
+from security import register_security
 
-# ================== KHỞI TẠO FLASK ==================
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 CORS(app, origins=[
@@ -52,17 +47,11 @@ CORS(app, origins=[
     "http://127.0.0.1",
 ])
 
-# ← ĐĂNG KÝ BẢO VỆ DOMAIN TRƯỚC KHI REGISTER ROUTES
 register_intrusion_detector(app)
 register_domain_guard(app, protect_prefix="/api/")
-# register_security được gọi trong register_routes (routes.py)
-
-# Đăng ký tất cả routes
 register_routes(app)
 
-# ================== WRAPPER THEO DÕI BOT THREAD ==================
 def run_bot_with_watchdog():
-    """Chạy bot và in log rõ ràng nếu crash"""
     import time as _time
     from telegram_bot import run_bot_in_thread
     print("[BOT-WATCHDOG] Bắt đầu theo dõi bot thread...", flush=True)
@@ -77,20 +66,17 @@ def run_bot_with_watchdog():
         print("[BOT-WATCHDOG] Bot dừng. Thử lại sau 10 giây...", flush=True)
         _time.sleep(10)
 
-# ================== CHẠY CHƯƠNG TRÌNH ==================
 if __name__ == "__main__":
     try:
         print("[START] Đang khởi động SHOP MINHSANG...", flush=True)
         print("[GUARD] Bảo vệ API - Chỉ cho phép: toolkiemlaisew.site", flush=True)
         print("[SECURITY] Intrusion Detector: bật theo dõi tấn công", flush=True)
 
-        # Tải lịch sử
         load_history()
         load_prediction_history()
         load_cau_history()
         print("[OK] Đã tải lịch sử dự đoán và phân tích cầu", flush=True)
 
-        # Khởi động Telegram bot trong thread riêng
         try:
             from telegram_bot import TELEGRAM_AVAILABLE
             if TELEGRAM_AVAILABLE:
@@ -107,7 +93,6 @@ if __name__ == "__main__":
 
         print(f"[START] Flask chạy tại http://0.0.0.0:{PORT}", flush=True)
 
-        # Giữ server luôn thức (tránh Render free bị ngủ)
         from keep_alive import start_keep_alive
         start_keep_alive()
 
