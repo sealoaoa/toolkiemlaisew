@@ -1,60 +1,120 @@
 # -*- coding: utf-8 -*-
-# ================== config.py ==================
-# Cấu hình chung, VIP, và thao tác với database
+# ================== app.py ==================
+# File chạy chính - khởi động Flask web + Telegram bot
 
-import os, json, time, hashlib, subprocess, sys, threading
-from dotenv import load_dotenv
-from nanoid import generate
+import os, sys, subprocess, threading, asyncio
 
-load_dotenv()
+# Force flush log để Render hiện ngay lập tức
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
-# ================== CONFIG ==================
-BOT_TOKEN   = os.getenv("BOT_TOKEN", "8297499534:AAGUPJfvoaxsCmbC-SnjIMxf5nm2vnNxlNA")
-ADMIN_ID    = int(os.getenv("ADMIN_TELEGRAM_ID", "7219600109"))
-PORT        = int(os.getenv("PORT", os.getenv("FLASK_PORT", "5000")))
-SECRET_KEY  = os.getenv("SECRET_KEY", "minhsang_shop_secret_2024_xK9p")
-SHOP_NAME   = "SHOP MINHSANG"
-# FIX: Dùng thư mục chứa file thực thi để đảm bảo đúng đường dẫn trên mọi môi trường
-_BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE   = os.path.join(_BASE_DIR, "data.json")
+def install(package):
+    print(f"⏳ Đang tự động cài đặt thư viện: {package}...", flush=True)
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
-# ================== VIP LEVELS CONFIG ==================
-VIP_LEVELS = {
-    "Đồng":        {"history_depth": 500,   "exp_required": 0,     "benefits": "Lịch sử 500 phiên",                           "color": "#CD7F32", "icon": "🥉"},
-    "Bạc":         {"history_depth": 1000,  "exp_required": 100,   "benefits": "Lịch sử 1000 phiên",                          "color": "#C0C0C0", "icon": "🥈"},
-    "Vàng":        {"history_depth": 2000,  "exp_required": 500,   "benefits": "Lịch sử 2000 phiên, Phân tích nâng cao",      "color": "#FFD700", "icon": "🥇"},
-    "Kim Cương":   {"history_depth": 5000,  "exp_required": 2000,  "benefits": "Lịch sử 5000 phiên, AI ưu tiên",             "color": "#B9F2FF", "icon": "💎"},
-    "Huyền Thoại": {"history_depth": 10000, "exp_required": 10000, "benefits": "Lịch sử 10000 phiên, Thuật toán độc quyền",  "color": "#FF6B6B", "icon": "👑"},
-}
+# Auto-install thư viện cần thiết
+REQUIRED_PACKAGES = [
+    ("requests", "requests"),
+    ("flask", "flask"),
+    ("flask-cors", "flask_cors"),
+    ("python-dotenv", "dotenv"),
+    ("nanoid", "nanoid"),
+    ("python-telegram-bot", "telegram")
+]
 
-def get_vip_level(exp):
-    levels = ["Đồng", "Bạc", "Vàng", "Kim Cương", "Huyền Thoại"]
-    for level in reversed(levels):
-        if exp >= VIP_LEVELS[level]["exp_required"]:
-            return level
-    return "Đồng"
+for package, module in REQUIRED_PACKAGES:
+    try:
+        __import__(module)
+        if module == "telegram":
+            from telegram.ext import Application
+    except ImportError:
+        install(package)
+    except Exception as e:
+        print(f"⚠️ Lỗi kiểm tra thư viện {package}: {e}", flush=True)
+        install(package)
 
-def get_history_depth(vip_level):
-    return VIP_LEVELS.get(vip_level, VIP_LEVELS["Đồng"])["history_depth"]
+from flask import Flask
+from flask_cors import CORS
+from config import SECRET_KEY, PORT
+from predict import load_history, load_prediction_history, load_cau_history
+from routes import register_routes
+from domain_guard import register_domain_guard
+from intrusion_detector import register_intrusion_detector
+from security import register_security  # ← Bảo mật tổng hợp cấp cao
 
-# ================== DATABASE ==================
-# Dùng database.py để lưu lên Supabase (tránh mất data khi Render restart)
-from database import load_db, save_db, DB_LOCK
+# ================== KHỞI TẠO FLASK ==================
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
+CORS(app, origins=[
+    "https://toolkiemlaisew.site",
+    "https://www.toolkiemlaisew.site",
+    "http://localhost",
+    "http://127.0.0.1",
+])
 
-def hash_password(pw):
-    return hashlib.sha256(pw.encode()).hexdigest()
+# ← ĐĂNG KÝ BẢO VỆ DOMAIN TRƯỚC KHI REGISTER ROUTES
+register_intrusion_detector(app)
+register_domain_guard(app, protect_prefix="/api/")
+# register_security được gọi trong register_routes (routes.py)
 
-def create_key(kind="LK", days=None, price=0):
-    code = f"{kind}-{generate(size=8).upper()}"
-    now = time.time()
-    expires = None if days is None else now + days * 86400
-    return {
-        "code": code, "type": kind, "price": price,
-        "createdAt": now, "expiresAt": expires,
-        "status": "available", "usedBy": None
-    }
+# Đăng ký tất cả routes
+register_routes(app)
 
-# ================== SHARED STATE ==================
-pending_deposits = {}
-deposit_counter = 0
-bot_app = None
+# ================== WRAPPER THEO DÕI BOT THREAD ==================
+def run_bot_with_watchdog():
+    """Chạy bot và in log rõ ràng nếu crash"""
+    import time as _time
+    from telegram_bot import run_bot_in_thread
+    print("[BOT-WATCHDOG] Bắt đầu theo dõi bot thread...", flush=True)
+    while True:
+        try:
+            print("[BOT-WATCHDOG] Đang khởi động bot...", flush=True)
+            run_bot_in_thread()
+        except Exception as e:
+            print(f"[BOT-WATCHDOG] ❌ Bot crash: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+        print("[BOT-WATCHDOG] Bot dừng. Thử lại sau 10 giây...", flush=True)
+        _time.sleep(10)
+
+# ================== CHẠY CHƯƠNG TRÌNH ==================
+if __name__ == "__main__":
+    try:
+        print("[START] Đang khởi động SHOP MINHSANG...", flush=True)
+        print("[GUARD] Bảo vệ API - Chỉ cho phép: toolkiemlaisew.site", flush=True)
+        print("[SECURITY] Intrusion Detector: bật theo dõi tấn công", flush=True)
+
+        # Tải lịch sử
+        load_history()
+        load_prediction_history()
+        load_cau_history()
+        print("[OK] Đã tải lịch sử dự đoán và phân tích cầu", flush=True)
+
+        # Khởi động Telegram bot trong thread riêng
+        try:
+            from telegram_bot import TELEGRAM_AVAILABLE
+            if TELEGRAM_AVAILABLE:
+                bot_thread = threading.Thread(target=run_bot_with_watchdog, daemon=True)
+                bot_thread.start()
+                print("[OK] Bot Telegram đang chạy song song", flush=True)
+            else:
+                print("[INFO] Telegram bot bị tắt - chỉ chạy web server", flush=True)
+        except Exception as e:
+            print(f"[WARNING] Không thể khởi động bot: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            print("[INFO] Website vẫn hoạt động bình thường", flush=True)
+
+        print(f"[START] Flask chạy tại http://0.0.0.0:{PORT}", flush=True)
+
+        # Giữ server luôn thức (tránh Render free bị ngủ)
+        from keep_alive import start_keep_alive
+        start_keep_alive()
+
+        app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+    except Exception as e:
+        print(f"\n❌ LỖI SERVER NGHIÊM TRỌNG: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        print("👉 Vui lòng chụp ảnh màn hình lỗi này và gửi cho admin.", flush=True)
+        input("Nhấn Enter để thoát...")
